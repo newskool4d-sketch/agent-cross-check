@@ -204,8 +204,13 @@ def check_codex_config():
     print(f"  신뢰 프로젝트 {len(projects)}건")
     if len(projects) > 50:
         warn(f"신뢰 목록 재비대 ({len(projects)}건) — 정리 검토")
+    # 홈 루트 신뢰: 데스크톱 앱이 자동 재등록(2026-07-28, 6회 재유입 실증)하는 항목이라
+    # 반복 제거 실익 없음 + 거버넌스 danger-full-access 복원으로 CLI 블로킹 위험도 소멸 → 수용(정보성)
+    home_trust = [p for p in projects if p.lower().rstrip("\\") == str(HOME).lower()]
+    if home_trust:
+        print(f"  ℹ️ 홈 루트 신뢰 존재 (앱 자동 등록, 수용 결정 2026-07-29 — 거버넌스 3종 유지 시 무해)")
     broad = [p for p in projects if p.lower().rstrip("\\") in
-             (str(HOME).lower(), "c:", "d:", "g:", r"g:\내 드라이브")]
+             ("c:", "d:", "g:", r"g:\내 드라이브")]
     if broad:
         warn(f"광범위 신뢰 재유입: {broad} — 샌드박스 ACL 폭풍 위험")
 
@@ -230,6 +235,17 @@ def check_codex_config():
     # 위험 설정 조합 — 보고만 (의도적 유지 결정: memory token-strategy 참조)
     combo = f"sandbox_mode={cfg.get('sandbox_mode')} / approval_policy={cfg.get('approval_policy')} / windows.sandbox={cfg.get('windows', {}).get('sandbox')}"
     print(f"  [보안 상태 보고] {combo} — 사용자 의도 설정, 변경 제안 아님")
+
+    # 거버넌스 3종 회귀 감시 — 2026-07-23 CLI 0.145.0 업데이트가 표준 프리셋으로
+    # 덮은 실증(홈 실행 시 sandbox-setup ACL 13분+ 블로킹). 기대값 = 사용자 의도(7/21 검증값)
+    GOV_EXPECT = {"sandbox_mode": "danger-full-access",
+                  "approval_policy": "never",
+                  "approvals_reviewer": "user"}
+    drift = {k: cfg.get(k) for k, v in GOV_EXPECT.items() if cfg.get(k) != v}
+    if drift:
+        warn(f"거버넌스 회귀: {drift} — CLI/앱 업데이트 프리셋 덮어쓰기 패턴 → 처방: Codex 전체 종료 후 7/21 값 복원 (memory project-codex-cleanup 07-28 참조)")
+    else:
+        ok("거버넌스 3종 유지 (danger-full-access / never / user)")
     return cfg
 
 
