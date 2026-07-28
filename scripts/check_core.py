@@ -177,21 +177,28 @@ def check_codex_config():
         return {}
     cfg = tomllib.load(cfg_path.open("rb"))
 
-    omo = cfg.get("plugins", {}).get("omo@sisyphuslabs", {}).get("mcp_servers", {})
-    cg = omo.get("codegraph", {}).get("enabled")
-    lsp = omo.get("lsp", {}).get("enabled")
-    if cg is not False:
-        warn(f"omo codegraph={cg} — 다이어트 회귀 (omo 업데이트 부작용 패턴) → 처방: 정본 ~/.omo/config.jsonc 확인 후 config 재수정")
-    else:
-        ok("omo codegraph off 유지")
-    if lsp is not False:
-        warn(f"omo lsp={lsp} — 다이어트 회귀")
-
+    # omo는 2026-07-25 사용자 의도로 전면 제거됨 — 미등록 시 omo 관련 3종 체크는 생략
+    # (codegraph·lsp·훅 off 4+ 기대는 모두 omo 훅 프로필 기준의 값이었음)
+    omo_plugin = "omo@sisyphuslabs" in cfg.get("plugins", {})
     st = cfg.get("hooks", {}).get("state", {})
-    n_off = sum(1 for v in st.values() if v.get("enabled") is False)
-    print(f"  훅 항목 {len(st)}개 중 off {n_off}개 (기대: 4+)")
-    if n_off < 4:
-        warn("훅 다이어트 일부 회귀 의심")
+
+    if not omo_plugin:
+        ok("omo 미등록 — codegraph/lsp/omo 훅 체크 생략 (2026-07-25 의도적 제거 확인)")
+        print(f"  훅 항목 {len(st)}개 (omo 제거 후 신형 프로필, 끌 대상 없음)")
+    else:
+        omo = cfg["plugins"]["omo@sisyphuslabs"].get("mcp_servers", {})
+        cg = omo.get("codegraph", {}).get("enabled")
+        lsp = omo.get("lsp", {}).get("enabled")
+        if cg is not False:
+            warn(f"omo codegraph={cg} — 다이어트 회귀 (omo 업데이트 부작용 패턴) → 처방: 정본 ~/.omo/config.jsonc 확인 후 config 재수정")
+        else:
+            ok("omo codegraph off 유지")
+        if lsp is not None and lsp is not False:
+            warn(f"omo lsp={lsp} — 다이어트 회귀")
+        n_off = sum(1 for v in st.values() if v.get("enabled") is False)
+        print(f"  훅 항목 {len(st)}개 중 off {n_off}개 (기대: 4+)")
+        if n_off < 4:
+            warn("훅 다이어트 일부 회귀 의심")
 
     projects = cfg.get("projects", {})
     print(f"  신뢰 프로젝트 {len(projects)}건")
