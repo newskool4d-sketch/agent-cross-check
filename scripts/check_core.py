@@ -149,6 +149,12 @@ def check_processes(target: str):
         n_codex = sum(owners["CODEX"].values())
         if sessions_hint and n_codex > sessions_hint * TH_NODE_PER_SESSION:
             warn(f"Codex node {n_codex}개 > 스레드 {sessions_hint}개 × {TH_NODE_PER_SESSION} — 세션 잔존 의심 → 처방: 앱 재시작")
+        # 절대 임계 (omo 제거로 sessions_hint=0이라 위 상대 임계가 영구 비활성 — 2026-07-29
+        # 실증: 열린 스레드 ~40개 복원 × 문서서버 4종 = doc-server 167개/6.4GB를 ✅로 통과시킴)
+        ds_n = owners["CODEX"].get("bundled-doc-server", 0)
+        ds_mb = mem["CODEX"].get("bundled-doc-server", 0) / 1024 / 1024
+        if ds_n >= 100 or ds_mb >= 3072:
+            warn(f"doc-server {ds_n}개/{ds_mb:.0f}MB — 열린 대화 스레드 누적(스레드당 4개 스폰) → 처방: 앱 내 안 쓰는 스레드 닫기/아카이브 후 앱 재시작 (재시작만 하면 복원되며 재발)")
         if app_age_h > TH_APP_HOURS:
             warn(f"Codex 앱 연속 구동 {app_age_h:.0f}시간 — 하루 1회 재시작 수칙 (15.5h 방치 시 9.5GB 누적 실측)")
         for pid, age in sandbox:
