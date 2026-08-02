@@ -47,7 +47,7 @@ STATE_DIR = Path(__file__).resolve().parent.parent / "state"
 # 임계값 (2026-07 실측 기반)
 TH_NODE_PER_SESSION = 6      # 세션당 node 초과 시 경고
 TH_SANDBOX_MIN = 5           # sandbox-setup 지속 분
-TH_LOGSDB_MB = 300           # logs_2.sqlite 경고 크기 (하루 ~50-100MB 증식 실측)
+TH_LOGSDB_MB = 500           # logs_2.sqlite 경고 크기 (하루 ~100MB 증식 실측 — 300은 3일마다 경고라 2026-08-01 상향)
 TH_APP_HOURS = 20            # 앱 연속 구동 경고 (15.5h에 9.5GB 누적 실측)
 
 SECRET_PAT = re.compile(
