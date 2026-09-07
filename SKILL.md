@@ -1,13 +1,6 @@
 ---
 name: 코덱스점검
-description: >
-  Codex(및 Claude) 운영 체계 상호 점검 스킬. 프로세스 계보(node/bun 소유자 분류)·RAM/CPU·
-  sandbox-setup 감시·설정 회귀 감지(codegraph·훅 다이어트)·omo 구버전 캐시·로그 DB 증식·
-  고아 프로세스·시크릿 평문 노출·자동 유입 코드(신규 훅/MCP/마켓 소스)를 일괄 진단하고
-  처방을 제시한다. 사용자가 "점검", "코덱스 점검", "코덱스 상태 확인", "느려졌어", "무거워",
-  "메모리 확인", "성능 저하", "프로세스 확인", "Codex 진단", "상호 점검"을 언급하면 —
-  대상을 명시하지 않아도 — 반드시 이 스킬을 사용할 것. Codex 쪽에서 Claude를 점검할 때는
-  같은 코어를 --target claude로 실행한다 (Codex 포인터: ~/.codex/skills/claude-check).
+description: "Codex·Claude 운영 체계 점검: 프로세스 계보·RAM/CPU·설정 회귀·캐시·로그 증식·시크릿 노출·자동 유입 코드 진단과 처방. '점검'·'느려졌어'·'메모리 확인' 시. Claude 대상은 --target claude."
 ---
 
 # 코덱스점검 — Claude ↔ Codex 상호 운영 점검
