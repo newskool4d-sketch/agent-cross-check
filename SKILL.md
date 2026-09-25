@@ -5,7 +5,7 @@ description: "Codex·Claude 운영 체계 점검: 프로세스 계보·RAM/CPU·
 
 # 코덱스점검 — Claude ↔ Codex 상호 운영 점검
 
-2026-07 Codex 운영 체계 정비 3일에서 검증된 진단·처방 체계의 스킬화 (이력은 이 repo `agent-cross-check`의 git log, 운영 방침은 memory `token-strategy-codex-parallel`).
+운영 방침: memory `token-strategy-codex-parallel` (변경 이력: repo `agent-cross-check` git log).
 **진단은 자동, 수정·삭제는 반드시 사용자 승인 후.**
 
 ## 실행
