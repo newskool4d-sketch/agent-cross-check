@@ -5,7 +5,7 @@ description: "Codex·Claude 운영 체계 점검: 프로세스 계보·RAM/CPU·
 
 # 코덱스점검 — Claude ↔ Codex 상호 운영 점검
 
-2026-07 Codex 운영 체계 정비 3일(memory `project-codex-cleanup`)에서 검증된 진단·처방 체계의 스킬화.
+2026-07 Codex 운영 체계 정비 3일에서 검증된 진단·처방 체계의 스킬화 (이력은 이 repo `agent-cross-check`의 git log, 운영 방침은 memory `token-strategy-codex-parallel`).
 **진단은 자동, 수정·삭제는 반드시 사용자 승인 후.**
 
 ## 실행
@@ -18,7 +18,10 @@ PYTHONIOENCODING=utf-8 python "$HOME/.claude/skills/코덱스점검/scripts/chec
 
 - Claude 세션에서 기본 대상은 `codex`. "클로드도"·"전부" 요청 시 `--target both`.
 - Codex 세션에서 실행 시 `--target claude` (포인터 스킬이 지정).
-- 스크립트는 **읽기 전용**이며 기준선 파일(`state/inventory_*.json`) 갱신 외에 아무것도 쓰지 않는다.
+- 스크립트는 **읽기 전용**이며 유일한 쓰기는 기준선 파일(`state/inventory_*.json`)이다. 기준선 갱신 규칙:
+  - 기준선 없음 → 자동 생성 / 신규 항목 없음(변화 없음·제거만) → 자동 갱신
+  - **신규 훅·MCP·마켓·플러그인·스킬이 감지되면 갱신 보류** — 심사·결정 전까지 매 실행 경고가 반복된다.
+    수용하기로 결정한 뒤에만 `--accept-baseline`을 붙여 재실행한다 (신규 항목이 있는 기준선을 덮어쓰는 유일한 경로).
 
 ## 리포트 해석과 처방
 
@@ -61,6 +64,7 @@ PYTHONIOENCODING=utf-8 python "$HOME/.claude/skills/코덱스점검/scripts/chec
 - 토큰·키 값은 어떤 출력·리포트·일지에도 **원문 기록 금지** — 위치·키 이름·`SET len=N`만.
 - 노출 발견 시: 즉시 경고 + rotate 안내 (로컬 제거는 승인 후, GitHub 웹 revoke는 사용자 몫).
 - 신규 훅·MCP·마켓 소스가 기준선에 없던 것이면 **자동 신뢰 금지** — 필요시 `security-vet` 심사 연결.
+  심사·결정 없이 두면 기준선은 갱신되지 않고 다음 실행에서도 경고된다 (수용은 `--accept-baseline` 재실행으로만).
 
 ## 자주 쓰는 처방 레시피 (승인 후)
 
@@ -72,6 +76,7 @@ PYTHONIOENCODING=utf-8 python "$HOME/.claude/skills/코덱스점검/scripts/chec
 | logs_2.sqlite 비대 | Codex 종료 확인 → sqlite+wal+shm 3종 삭제 (자동 재생성) |
 | Claude MCP 좀비 (같은 서버 3개+) | Claude 세션 재시작 안내. 고아(부모 사망)는 승인 후 종료 |
 | sandbox-setup 장기 지속 | 신뢰 목록 광범위 항목(홈·드라이브 루트) 확인 → 승인 후 해당 항목만 제거 |
+| 신규 유입 경고 (훅·MCP·마켓·플러그인·스킬이 기준선에 없음) | 출처 확인 → 필요시 `security-vet` 심사 → 수용 결정 시 `--accept-baseline` 재실행. 미결이면 그대로 둠 (기준선 자동 갱신 없음, 다음 실행에도 경고 유지) |
 
 ## 보고 형식
 

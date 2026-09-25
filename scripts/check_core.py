@@ -5,14 +5,17 @@
     python check_core.py --target codex   # Claude가 Codex를 점검 (기본)
     python check_core.py --target claude  # Codex가 Claude를 점검
     python check_core.py --target both
+    python check_core.py --target codex --accept-baseline   # 신규 유입 항목을 심사한 뒤 기준선에 수용
 
 원칙 (SKILL.md 3대 원칙과 동일):
     1. 이 스크립트는 읽기 전용 진단만 한다 — 수정·삭제·프로세스 종료 없음.
+       유일한 쓰기는 기준선 파일(state/inventory_{target}.json)이며, 신규 항목이 감지되면
+       --accept-baseline 없이는 갱신하지 않는다 (미결 항목은 매 실행 경고).
     2. 시크릿 값은 절대 출력하지 않는다 — 위치·키 이름·길이만 보고.
     3. 처방은 텍스트 제안일 뿐, 실행은 호출자(에이전트)가 사용자 승인 후 별도로 한다.
 
 2026-07 Codex 운영 체계 정비(3일)에서 검증된 로직의 통합본.
-근거 이력: memory project-codex-cleanup.
+근거 이력: 이 repo(agent-cross-check)의 git log · 운영 방침은 memory token-strategy-codex-parallel.
 """
 from __future__ import annotations
 
@@ -249,7 +252,7 @@ def check_codex_config():
                   "approvals_reviewer": "user"}
     drift = {k: cfg.get(k) for k, v in GOV_EXPECT.items() if cfg.get(k) != v}
     if drift:
-        warn(f"거버넌스 회귀: {drift} — CLI/앱 업데이트 프리셋 덮어쓰기 패턴 → 처방: Codex 전체 종료 후 7/21 값 복원 (memory project-codex-cleanup 07-28 참조)")
+        warn(f"거버넌스 회귀: {drift} — CLI/앱 업데이트 프리셋 덮어쓰기 패턴 → 처방: Codex 전체 종료 후 7/21 값 복원 (기대값 GOV_EXPECT — 사용자 의도 설정, memory token-strategy-codex-parallel 참조)")
     else:
         ok("거버넌스 3종 유지 (danger-full-access / never / user)")
     return cfg
@@ -301,7 +304,14 @@ def secret_scan_targets(target: str):
 
 
 # ---------------------------------------------------------------- 유입 코드 diff (기준선)
-def inventory_diff(target: str, cfg):
+def inventory_diff(target: str, cfg, accept: bool = False):
+    """현재 인벤토리를 기준선(state/inventory_{target}.json)과 비교해 신규·제거 항목을 보고한다.
+
+    기준선 갱신 규칙 (2026-09-06 — 경고 직후 무조건 덮어써 신규 훅·플러그인이 자동 승격되던 결함 수정):
+        기준선 없음                    → 자동 생성
+        신규 항목 없음(변화 없음·제거만)  → 자동 갱신
+        신규 항목 있음                  → 갱신 보류(다음 실행에도 경고), accept(--accept-baseline) 시에만 수용
+    """
     print("\n== 자동 유입 코드 감지 (기준선 대비) ==")
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     state_file = STATE_DIR / f"inventory_{target}.json"
@@ -325,6 +335,7 @@ def inventory_diff(target: str, cfg):
         skills = sorted(d.name for d in (CLAUDE / "skills").iterdir() if d.is_dir()) if (CLAUDE / "skills").exists() else []
         inv = {"mcp_servers": servers, "skills": skills}
 
+    has_new = False
     if state_file.exists():
         try:
             prev = json.loads(state_file.read_text(encoding="utf-8"))
@@ -337,7 +348,7 @@ def inventory_diff(target: str, cfg):
             new = cur_set - prev_set
             gone = prev_set - cur_set
             if new:
-                changed = True
+                changed = has_new = True
                 warn(f"신규 {k}: {sorted(str(x) for x in new)[:5]} — 자동 신뢰 금지, 필요시 security-vet 심사")
             if gone:
                 changed = True
@@ -346,6 +357,12 @@ def inventory_diff(target: str, cfg):
             ok("기준선 대비 변화 없음")
     else:
         print("  ℹ️ 기준선 최초 생성")
+
+    if has_new and not accept:
+        print("  ℹ️ 기준선 갱신 보류 — 신규 항목은 심사·결정 전까지 매 실행 경고됨. 수용 시 --accept-baseline 로 재실행")
+        return
+    if has_new:
+        print("  ℹ️ 기준선 갱신 (--accept-baseline) — 위 신규 항목을 기준선에 수용")
     state_file.write_text(json.dumps(inv, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
@@ -380,23 +397,28 @@ def check_claude_side():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", choices=["codex", "claude", "both"], default="codex")
+    ap.add_argument("--accept-baseline", action="store_true",
+                    help="신규 유입 항목 경고를 심사·결정한 뒤 현재 인벤토리를 기준선으로 수용 "
+                         "(없으면 신규 항목은 매 실행 경고되고 기준선은 갱신되지 않음)")
     args = ap.parse_args()
 
     print(f"===== 상호 점검 리포트 ({dt.datetime.now():%Y-%m-%d %H:%M}) — 대상: {args.target} =====")
     print("(읽기 전용 진단 — 어떤 수정·삭제도 하지 않음)")
+    if args.accept_baseline:
+        print("(--accept-baseline: 이번 실행의 인벤토리를 기준선 파일에 수용)")
 
     cfg = None
     if args.target in ("codex", "both"):
         check_processes("codex")
         cfg = check_codex_config()
-        inventory_diff("codex", cfg)
+        inventory_diff("codex", cfg, args.accept_baseline)
     if args.target in ("claude", "both"):
         if args.target == "both":
             print()
         else:
             check_processes("claude")
         check_claude_side()
-        inventory_diff("claude", None)
+        inventory_diff("claude", None, args.accept_baseline)
     scan_secrets(secret_scan_targets(args.target))
 
     print(f"\n===== 종합: {'⚠️ 조치 검토 ' + str(len(WARNINGS)) + '건' if WARNINGS else '✅ 전 항목 정상'} =====")
