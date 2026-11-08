@@ -56,8 +56,11 @@ TH_APP_HOURS = 20            # 앱 연속 구동 경고 (15.5h에 9.5GB 누적 �
 SECRET_PAT = re.compile(
     r"gho_[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}"
     r"|sk-[A-Za-z0-9_-]{20,}|xox[bap]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{30,}"
+    r"|ntn_[A-Za-z0-9]{30,}|secret_[A-Za-z0-9]{30,}"   # Notion 내부 통합 토큰 (신·구 형식)
 )
-KEYVAL_PAT = re.compile(r'^\s*([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*)\s*=\s*"([^"]{12,})"', re.M)
+# TOML(KEY = "v")과 JSON("KEY": "v") 양쪽 문법 — settings.json·.claude.json의 env 블록도 잡기 위함
+KEYVAL_PAT = re.compile(
+    r'^\s*"?([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*)"?\s*[=:]\s*"([^"]{12,})"', re.M)
 
 WARNINGS: list[str] = []
 
@@ -182,9 +185,14 @@ def check_codex_config():
     print("\n== Codex 설정 무결성 ==")
     cfg_path = CODEX / "config.toml"
     if not (tomllib and cfg_path.exists()):
-        warn("config.toml 파싱 불가")
-        return {}
-    cfg = tomllib.load(cfg_path.open("rb"))
+        warn("config.toml 파싱 불가 (파일 없음 또는 tomllib 미지원) — 설정·인벤토리 점검 생략")
+        return None
+    try:
+        with cfg_path.open("rb") as fh:
+            cfg = tomllib.load(fh)
+    except (tomllib.TOMLDecodeError, OSError) as exc:
+        warn(f"config.toml 파싱 실패: {exc} — 설정·인벤토리 점검 생략")
+        return None
 
     # omo는 2026-07-25 사용자 의도로 전면 제거됨 — 미등록 시 omo 관련 3종 체크는 생략
     # (codegraph·lsp·훅 off 4+ 기대는 모두 omo 훅 프로필 기준의 값이었음)
@@ -275,7 +283,8 @@ def scan_secrets(paths):
             continue
         for m in SECRET_PAT.finditer(text):
             tok = m.group(0)
-            prefix = tok[:tok.index("_") + 1] if "_" in tok[:12] else tok[:4]
+            # 종류 식별용 접두어만 — 최대 4자 (예: gho_, sk-, ntn_, AIza). 비밀 본문 노출 금지
+            prefix = tok[:4]
             hits[(str(p), f"{prefix}... SET len={len(tok)}")] += 1
         for m in KEYVAL_PAT.finditer(text):
             key, val = m.group(1), m.group(2)
@@ -304,6 +313,23 @@ def secret_scan_targets(target: str):
 
 
 # ---------------------------------------------------------------- 유입 코드 diff (기준선)
+def _claude_mcp_servers():
+    """~/.claude.json 의 MCP 서버 이름 목록. 프로젝트 범위 서버는 'project:<경로>/<이름>'.
+
+    파일이 없거나 JSON 파싱에 실패하면 None (호출자가 기준선 갱신을 생략하도록).
+    """
+    cfg_file = HOME / ".claude.json"
+    try:
+        data = json.loads(cfg_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    names = set((data.get("mcpServers") or {}).keys())
+    for proj, pcfg in (data.get("projects") or {}).items():
+        for name in (pcfg or {}).get("mcpServers") or {}:
+            names.add(f"project:{proj}/{name}")
+    return sorted(names)
+
+
 def inventory_diff(target: str, cfg, accept: bool = False):
     """현재 인벤토리를 기준선(state/inventory_{target}.json)과 비교해 신규·제거 항목을 보고한다.
 
@@ -316,8 +342,13 @@ def inventory_diff(target: str, cfg, accept: bool = False):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     state_file = STATE_DIR / f"inventory_{target}.json"
 
-    inv = {}
-    if target == "codex" and cfg:
+    inv = None
+    if target == "codex":
+        if cfg is None:
+            # config.toml을 읽지 못한 실행 — 빈 인벤토리로 기준선을 덮어쓰면 다음 실행에서
+            # 전 항목이 "신규"로 경고되어 실제 유입 항목이 묻힌다 → 비교·갱신 모두 생략
+            warn("config.toml 미확보 — 기준선 비교·갱신 생략 (기준선 보존)")
+            return
         inv = {
             "mcp_servers": sorted(cfg.get("mcp_servers", {})),
             "hooks": sorted(cfg.get("hooks", {}).get("state", {})),
@@ -325,13 +356,12 @@ def inventory_diff(target: str, cfg, accept: bool = False):
             "plugins_enabled": sorted(k for k, v in cfg.get("plugins", {}).items() if v.get("enabled")),
         }
     elif target == "claude":
-        mcp_file = CLAUDE / "mcp.json"
-        servers = []
-        if mcp_file.exists():
-            try:
-                servers = sorted(json.loads(mcp_file.read_text(encoding="utf-8")).get("mcpServers", {}))
-            except (json.JSONDecodeError, OSError):
-                pass
+        # 활성 MCP 설정 정본은 ~/.claude.json (~/.claude/mcp.json 은 미사용 파일) —
+        # 최상위 mcpServers + projects[*].mcpServers 를 모두 수집
+        servers = _claude_mcp_servers()
+        if servers is None:
+            warn("~/.claude.json 미확보 — 기준선 비교·갱신 생략 (기준선 보존)")
+            return
         skills = sorted(d.name for d in (CLAUDE / "skills").iterdir() if d.is_dir()) if (CLAUDE / "skills").exists() else []
         inv = {"mcp_servers": servers, "skills": skills}
 
@@ -410,7 +440,7 @@ def main():
     cfg = None
     if args.target in ("codex", "both"):
         check_processes("codex")
-        cfg = check_codex_config()
+        cfg = check_codex_config()   # None이면 inventory_diff가 기준선을 보존하고 생략
         inventory_diff("codex", cfg, args.accept_baseline)
     if args.target in ("claude", "both"):
         if args.target == "both":
